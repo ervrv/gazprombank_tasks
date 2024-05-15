@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Annotated
 from pandas import DataFrame
 from airflow.providers.http.hooks.http import HttpHook
+from airflow.exceptions import AirflowException
 
 
 ColumnsTuple = tuple[StrictStr, StrictStr, StrictStr]
@@ -18,18 +19,19 @@ class ImportantDocsModel(BaseModel):
     Rows: Rows
 
 
-def get_important_docs_json(url: str) -> dict:
+def get_important_docs_json(conn_id: str, endpoint: str) -> dict:
     """
     Requests docs by http request to outer API and returns response body.
-    :param url: url to request docs
+    :param conn_id: connection id for HttpHook
+    :param endpoint: important docs endpoint
     :return: dict, containing docs data
     """
-    hook = HttpHook(method='GET')
+    hook = HttpHook(method='GET', http_conn_id=conn_id)
     try:
-        response = hook.run(endpoint=url)
+        response = hook.run(endpoint=endpoint, headers={"Content-type": "application/json"})
         json_data = response.json()
-    except Exception as ex:
-        print(f'Failed to get json from bank API: {ex}')
+    except AirflowException as ex:
+        print(f'Failed to get response from docs API: {ex}')
         json_data = {}
     return json_data
 
@@ -54,12 +56,12 @@ def handle_docs(docs_model: ImportantDocsModel) -> DataFrame:
 
 
 if __name__ == '__main__':
-    host = 'api.gazprombank.ru/'
     today = datetime.today()
     beginning_of_today = datetime(today.year, today.month, today.day)
     docs_date = beginning_of_today.timestamp()
-    api_url = f'{host}very/important/docs?documents_date={docs_date}'
-    json_docs = get_important_docs_json(api_url)
-    docs = ImportantDocsModel(**json_docs)  # validating here
+    connection_id = 'https://api.gazprombank.ru'
+    docs_endpoint = f'/very/important/docs?documents_date={docs_date}'
+    json_docs = get_important_docs_json(connection_id, docs_endpoint)
+    docs = ImportantDocsModel(**json_docs)  # validating implicitly here
     dataframe = handle_docs(docs)
     print(dataframe.to_csv())
